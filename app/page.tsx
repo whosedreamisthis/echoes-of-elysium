@@ -52,7 +52,7 @@ export default function GamePage() {
 			setWhispers((prev) => [
 				...prev,
 				`Oracle: The anomaly shifts. A new path reveals itself in the ${newLocation.replace(
-					'_',
+					/_/g,
 					' '
 				)}.`,
 			]);
@@ -62,9 +62,14 @@ export default function GamePage() {
 		} else if (type === 'roomChanged') {
 			const { newLocation } = payload;
 			console.log(`Player entered: ${newLocation}`);
-			setPlayerLocation(newLocation); // Update React state to reflect new room
+			setPlayerLocation(newLocation);
+			// --- THIS IS THE LINE THAT WAS LIKELY MISSING ---
+			setWhispers((prev) => [
+				...prev,
+				`Oracle: Entering the ${newLocation.replace(/_/g, ' ')}.`,
+			]);
+			// --- ENSURE THIS LINE IS PRESENT ---
 		}
-		// Add other event types here as your game grows
 	}, []); // Empty dependency array ensures this function is stable
 
 	// Effect to update Phaser game scene's props when React state changes
