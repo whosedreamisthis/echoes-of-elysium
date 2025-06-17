@@ -10,10 +10,16 @@ import * as Phaser from 'phaser'; // Correct import for Phaser as a namespace
 import GameScene from '@/game/scenes/game-scene';
 
 // Define the props that this React component will accept
+interface GameEventPayload {
+	puzzleId?: string; // Optional, as not all events have a puzzleId
+	newLocation?: string; // Optional, as not all events change location
+	[key: string]: any; // Allow for other properties, but discourage them
+}
+
 interface PhaserGameProps {
-	onGameEvent: (type: string, payload?: any) => void; // Callback to send events to React
-	playerLocation: string; // Current player location (from React state)
-	oracleDecayLevel: number; // Current Oracle decay level (from React state)
+	onGameEvent: (type: string, payload?: GameEventPayload) => void; // <-- More specific type
+	playerLocation: string;
+	oracleDecayLevel: number;
 }
 
 const PhaserGame: React.FC<PhaserGameProps> = ({
@@ -47,6 +53,14 @@ const PhaserGame: React.FC<PhaserGameProps> = ({
 				},
 				render: {
 					pixelArt: true, // Good for a crisp 2D, no-assets style
+				},
+				physics: {
+					// Add this new physics configuration block
+					default: 'arcade', // We're using Arcade Physics
+					arcade: {
+						debug: false, // Set to true to see collision boxes in dev mode
+						gravity: { y: 0, x: 0 },
+					},
 				},
 				// Optionally add physics or other plugins here if needed later
 			};

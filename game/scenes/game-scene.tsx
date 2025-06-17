@@ -1,17 +1,25 @@
 // src/game/scenes/game-scene.tsx
 
-import * as Phaser from 'phaser'; // Correct import for Phaser as a namespace
+import * as Phaser from 'phaser';
 
 // Define a type for the callback function to send events to React
-type GameEventCallback = (type: string, payload?: any) => void;
+interface GameEventPayload {
+	puzzleId?: string;
+	newLocation?: string;
+	[key: string]: any; // Allows for other properties, but we'll try to be specific
+}
+type GameEventCallback = (type: string, payload?: GameEventPayload) => void;
 
 // Define your Phaser Scene class
 class GameScene extends Phaser.Scene {
-	// Properties to hold game objects and state, initialized to default values
-	player!: Phaser.GameObjects.Rectangle;
-	currentRoomGraphics!: Phaser.GameObjects.Graphics;
-	decayOverlay!: Phaser.GameObjects.Graphics;
-	puzzleElement?: Phaser.GameObjects.Rectangle; // Optional, as not all rooms have a puzzle
+	// Properties for game objects and state
+	player!: Phaser.GameObjects.Rectangle & {
+		body: Phaser.Physics.Arcade.Body;
+	}; // Player with physics body
+	cursors!: Phaser.Types.Input.Keyboard.CursorKeys; // For arrow key input
+	currentRoomGraphics!: Phaser.GameObjects.Graphics; // For drawing room geometry
+	decayOverlay!: Phaser.GameObjects.Graphics; // For visual decay effects
+	puzzleElement?: Phaser.GameObjects.Rectangle; // Optional interactive element
 
 	// Properties to store state passed from React
 	gameEventCallback: GameEventCallback;
@@ -46,8 +54,6 @@ class GameScene extends Phaser.Scene {
 	preload() {
 		// This is where you would load assets (images, sounds, etc.) if you had them.
 		// For "no assets," this section remains empty or is used for font loading.
-		// Example for a simple font:
-		// this.load.bitmapFont('atari', 'assets/fonts/atari-smooth.png', 'assets/fonts/atari-smooth.xml');
 	}
 
 	create() {
@@ -64,6 +70,13 @@ class GameScene extends Phaser.Scene {
 		);
 		this.player.setDepth(1); // Ensure player is drawn above room graphics
 
+		// Enable Arcade Physics for the player object
+		this.physics.world.enable(this.player);
+		this.player.body.setCollideWorldBounds(true); // Keep player within canvas bounds
+
+		// Create cursor keys object for easy arrow key input
+		this.cursors = this.input.keyboard!.createCursorKeys();
+
 		// Create a Graphics object for drawing the current room's static elements
 		this.currentRoomGraphics = this.add.graphics();
 		this.currentRoomGraphics.setDepth(0); // Draw below player
@@ -75,24 +88,11 @@ class GameScene extends Phaser.Scene {
 		// Initial draw of the room based on the starting player location
 		this.drawRoom();
 
-		// Setup input for player movement (example: arrow keys)
-		// You might want to debounce these or use a physics system for smoother movement later
-		this.input.keyboard?.on('keydown-LEFT', () => {
-			this.player.x -= 10;
-		});
-		this.input.keyboard?.on('keydown-RIGHT', () => {
-			this.player.x += 10;
-		});
-		this.input.keyboard?.on('keydown-UP', () => {
-			this.player.y -= 10;
-		});
-		this.input.keyboard?.on('keydown-DOWN', () => {
-			this.player.y += 10;
-		});
-
-		// Setup pointer (mouse/touch) input for interacting with puzzle elements
+		// Setup pointer (mouse/touch) input for interacting with the puzzle element
+		// This global listener catches all pointerdown events.
 		this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
 			// Check if the click occurred on the defined puzzle element
+			// We are no longer using global pointerover/out, but this global click is fine
 			if (
 				this.puzzleElement &&
 				this.puzzleElement.getBounds().contains(pointer.x, pointer.y)
@@ -115,14 +115,40 @@ class GameScene extends Phaser.Scene {
 		this.cameras.main.setSize(width, height);
 		// Redraw the room to adapt to new dimensions
 		this.drawRoom();
-		// Reposition player if necessary (e.g., keep them centered)
-		this.player.setPosition(width / 2, height / 2); // Center player on resize
+		// Reposition player (e.g., keep them centered)
+		this.player.setPosition(width / 2, height / 2);
 	}
 
+	// The update method runs every frame.
 	update() {
-		// This method runs every frame.
-		// Use it for continuous animations, collision detection, etc.
-		// For now, simple player movement is handled by keydown events.
+		// Set player velocity to zero initially to stop movement if no keys are pressed
+		this.player.body.setVelocity(0);
+
+		const playerSpeed = 200; // Define player movement speed
+
+		// Horizontal movement
+		if (this.cursors.left.isDown) {
+			this.player.body.setVelocityX(-playerSpeed);
+		} else if (this.cursors.right.isDown) {
+			this.player.body.setVelocityX(playerSpeed);
+		}
+
+		// Vertical movement
+		if (this.cursors.up.isDown) {
+			this.player.body.setVelocityY(-playerSpeed);
+		} else if (this.cursors.down.isDown) {
+			this.player.body.setVelocityY(playerSpeed);
+		}
+
+		// Optional: Visual feedback for when the player is moving
+		if (
+			this.player.body.velocity.x !== 0 ||
+			this.player.body.velocity.y !== 0
+		) {
+			this.player.setFillStyle(0x00ff00); // Change player color to green when moving
+		} else {
+			this.player.setFillStyle(0xffffff); // Revert to white when idle
+		}
 	}
 
 	// --- Procedural Generation & Drawing Functions ---
@@ -173,12 +199,18 @@ class GameScene extends Phaser.Scene {
 			roomHeight - 100
 		);
 
+		// --- IMPORTANT: Destroy and re-create the puzzle element ---
+		// Remove previous puzzleElement if it exists before creating a new one
+		if (this.puzzleElement) {
+			this.puzzleElement.destroy();
+			this.puzzleElement = undefined; // Clear the reference
+		}
+
 		// Create a "corrupted panel" as a clickable puzzle element
 		const panelX = x + roomWidth * 0.7;
 		const panelY = y + roomHeight * 0.3;
 		const panelSize = 60;
-		// Remove previous puzzleElement if it exists before creating a new one
-		this.puzzleElement?.destroy(); // Clean up existing one if redraw
+		// Create the rectangle: position is center, so add half size to x, y
 		this.puzzleElement = this.add.rectangle(
 			panelX + panelSize / 2,
 			panelY + panelSize / 2,
@@ -189,6 +221,16 @@ class GameScene extends Phaser.Scene {
 		this.puzzleElement.setInteractive(); // Make it responsive to clicks
 		this.puzzleElement.setName('starting_chamber_panel'); // Give it a name for event handling
 		this.puzzleElement.setDepth(1); // Ensure it's above room graphics
+
+		// Add pointerover/pointerout events directly to the puzzle element for visual feedback
+		this.puzzleElement.on('pointerover', () => {
+			this.puzzleElement?.setFillStyle(0xff00ff, 0.7); // Make it slightly transparent/glowy
+		});
+
+		this.puzzleElement.on('pointerout', () => {
+			this.puzzleElement?.setFillStyle(0xff00ff, 1); // Reset to full opacity
+		});
+		// --- END puzzle element handling ---
 	}
 
 	drawCorruptedArchive(width: number, height: number) {
