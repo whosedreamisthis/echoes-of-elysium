@@ -13,18 +13,20 @@ const Whisper: React.FC<WhisperProps> = ({ whispers }) => {
 
 	// Effect to handle new whispers and reset typing animation
 	useEffect(() => {
+		// Only update if there are new whispers and it's not already the one we are typing
 		if (
 			whispers.length > 0 &&
 			whispers.length - 1 !== currentWhisperIndex
 		) {
 			setCurrentWhisperIndex(whispers.length - 1); // Point to the latest whisper
-			setDisplayedWhisper(''); // Clear displayed text
+			setDisplayedWhisper(''); // Clear displayed text for new typing
 			setCharIndex(0); // Reset char index for typing effect
 		}
 	}, [whispers, currentWhisperIndex]);
 
 	// Effect for the typing animation
 	useEffect(() => {
+		// Ensure there's a whisper to type and we haven't finished typing it
 		if (
 			currentWhisperIndex >= 0 &&
 			charIndex < whispers[currentWhisperIndex].length
@@ -40,7 +42,7 @@ const Whisper: React.FC<WhisperProps> = ({ whispers }) => {
 		}
 	}, [currentWhisperIndex, charIndex, whispers]);
 
-	// If there are no whispers yet, show the "Awaiting data" message
+	// If there are no whispers yet or we are at the initial state, show the "Awaiting data" message
 	if (whispers.length === 0 && displayedWhisper === '') {
 		return (
 			<div
@@ -81,11 +83,15 @@ const Whisper: React.FC<WhisperProps> = ({ whispers }) => {
 				display: 'flex',
 				alignItems: 'flex-start', // Align text to top
 				boxSizing: 'border-box',
-				// REMOVED: overflowY: 'auto'
-				// REMOVED: maxHeight
 			}}
 		>
-			<p style={{ marginBottom: '5px', color: '#00ff00' }}>
+			<p
+				style={{
+					marginBottom: '5px',
+					color: '#00ff00',
+					whiteSpace: 'pre-wrap',
+				}}
+			>
 				{displayedWhisper}
 				{/* Optional: Add a blinking cursor effect */}
 				{charIndex < whispers[currentWhisperIndex]?.length && (
@@ -99,7 +105,7 @@ const Whisper: React.FC<WhisperProps> = ({ whispers }) => {
 					</span>
 				)}
 			</p>
-			{/* Add a CSS animation for the blinking caret */}
+			{/* Add a CSS animation for the blinking caret directly here using <style jsx> */}
 			<style jsx>{`
 				@keyframes blink-caret {
 					from,
