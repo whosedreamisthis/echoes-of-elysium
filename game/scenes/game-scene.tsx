@@ -103,7 +103,7 @@ interface GameEventPayload {
 	message?: string;
 	type?: string; // For gameFeedback type
 	currentDecay?: number; // For decayUpdate type
-	[key: string]: any;
+	[key: string]: any; // Allow for other properties
 }
 type GameEventCallback = (type: string, payload?: GameEventPayload) => void;
 
@@ -128,66 +128,85 @@ class GameScene extends Phaser.Scene {
 		this.oracleDecayLevel = 0.0;
 	}
 
+	/**
+	 * Updates properties from the React component.
+	 * Redraws the room if playerLocation changes, and updates decay overlay.
+	 */
 	updateProps(newProps: {
 		playerLocation: string;
 		oracleDecayLevel: number;
 	}) {
 		if (this.playerLocation !== newProps.playerLocation) {
 			this.playerLocation = newProps.playerLocation;
-			this.drawRoom();
+			this.drawRoom(); // Redraw the new room when location changes
 		}
 		if (this.oracleDecayLevel !== newProps.oracleDecayLevel) {
 			this.oracleDecayLevel = newProps.oracleDecayLevel;
-			this.updateDecayOverlay();
+			this.updateDecayOverlay(); // Update visual decay effect
 		}
 	}
 
 	preload() {
-		// No assets to preload yet
+		// No assets to preload yet, but this is where you'd load images, audio, etc.
 	}
 
 	create() {
+		// Set initial background color
 		this.cameras.main.setBackgroundColor('#1a1a1a');
 
+		// Initialize graphics objects for room elements and decay overlay
 		this.currentRoomGraphics = this.add.graphics();
-		this.currentRoomGraphics.setDepth(10);
+		this.currentRoomGraphics.setDepth(10); // Render below player
 
 		this.decayOverlay = this.add.graphics();
-		this.decayOverlay.setDepth(50);
+		this.decayOverlay.setDepth(50); // Render above most other elements for overlay effect
 
+		// Create the player rectangle
 		this.player = this.add.rectangle(
-			this.scale.width / 2,
-			this.scale.height / 2,
+			this.scale.width / 2, // Start in the horizontal center
+			this.scale.height / 2, // Start in the vertical center
 			20,
-			20,
-			0xffffff
+			20, // Player size (width, height)
+			0xffffff // White color
 		) as Phaser.GameObjects.Rectangle & {
 			body: Phaser.Physics.Arcade.Body;
 		};
-		this.player.setDepth(30);
+		this.player.setDepth(30); // Render above room graphics, below decay overlay
 
+		// Enable Arcade Physics for the player
 		this.physics.world.enable(this.player);
-		this.player.body.setCollideWorldBounds(true);
+		this.player.body.setCollideWorldBounds(true); // Player cannot move off-screen
 
+		// Set up keyboard input (arrow keys)
 		this.cursors = this.input.keyboard!.createCursorKeys();
 
+		// Initial draw of the room
 		this.drawRoom();
 
+		// Listen for window resize events to adjust game elements
 		this.scale.on('resize', this.onResize, this);
 	}
 
+	/**
+	 * Handles resizing of the game canvas.
+	 * Adjusts camera, redraws room, and repositions player.
+	 */
 	onResize(gameSize: Phaser.Structs.Size) {
 		const { width, height } = gameSize;
 		this.cameras.main.setSize(width, height);
-		this.drawRoom();
-		this.player.setPosition(width / 2, height / 2);
+		this.drawRoom(); // Redraw room elements based on new size
+		this.player.setPosition(width / 2, height / 2); // Recenter player
 	}
 
+	/**
+	 * Game loop update method. Handles player movement.
+	 */
 	update() {
-		this.player.body.setVelocity(0);
+		this.player.body.setVelocity(0); // Stop player movement by default
 
-		const playerSpeed = 200;
+		const playerSpeed = 200; // Speed of the player
 
+		// Apply velocity based on arrow key input
 		if (this.cursors.left.isDown) {
 			this.player.body.setVelocityX(-playerSpeed);
 		} else if (this.cursors.right.isDown) {
@@ -200,147 +219,172 @@ class GameScene extends Phaser.Scene {
 			this.player.body.setVelocityY(playerSpeed);
 		}
 
+		// Change player color based on movement state
 		if (
 			this.player.body.velocity.x !== 0 ||
 			this.player.body.velocity.y !== 0
 		) {
-			this.player.setFillStyle(0x00ff00);
+			this.player.setFillStyle(0x00ff00); // Green when moving
 		} else {
-			this.player.setFillStyle(0xffffff);
+			this.player.setFillStyle(0xffffff); // White when idle
 		}
 	}
 
+	/**
+	 * Draws the current room based on playerLocation.
+	 * Clears previous room elements and creates new ones.
+	 */
 	drawRoom() {
-		this.currentRoomGraphics.clear();
-		this.decayOverlay.clear();
+		this.currentRoomGraphics.clear(); // Clear all previous room drawings
+		this.decayOverlay.clear(); // Clear decay overlay as it will be redrawn by updateDecayOverlay
 
+		// Destroy all previous exit rectangles to prevent duplicates
 		this.exitRects.forEach((rect) => rect.destroy());
-		this.exitRects = [];
+		this.exitRects = []; // Clear the array
 
-		const { width, height } = this.sys.game.canvas;
-		const currentRoomConfig = roomConfigs[this.playerLocation];
+		const { width, height } = this.sys.game.canvas; // Get current canvas dimensions
+		const currentRoomConfig = roomConfigs[this.playerLocation]; // Get config for current room
 
+		// Handle case where room config is not found (shouldn't happen if defined)
 		if (!currentRoomConfig) {
 			console.error(
 				`Room configuration not found for: ${this.playerLocation}`
 			);
-			this.cameras.main.setBackgroundColor('#ff0000');
-			this.drawEmptyRoom(width, height);
+			this.cameras.main.setBackgroundColor('#ff0000'); // Set error background
+			this.drawEmptyRoom(width, height); // Draw a generic empty room
 			return;
 		}
 
+		// Set room background color and call its specific drawing function
 		this.cameras.main.setBackgroundColor(currentRoomConfig.backgroundColor);
 		currentRoomConfig.drawFunction(this, width, height);
 
+		// Draw exits for the current room
 		currentRoomConfig.exits.forEach((exit) => {
+			// Calculate absolute pixel coordinates for the exit rectangle
 			let exitX = width * exit.x;
 			let exitY = height * exit.y;
 			const exitWidth = width * exit.width;
 			const exitHeight = height * exit.height;
 
+			// Adjust position based on direction to place the center correctly for corners/edges
 			switch (exit.direction) {
-				case 'north':
+				case 'north': // Top edge
 					exitY += exitHeight / 2;
 					break;
-				case 'south':
+				case 'south': // Bottom edge
 					exitY -= exitHeight / 2;
 					break;
-				case 'west':
+				case 'west': // Left edge
 					exitX += exitWidth / 2;
 					break;
-				case 'east':
+				case 'east': // Right edge
 					exitX -= exitWidth / 2;
 					break;
 				default:
-					break;
+					break; // No adjustment for 'secret' or center exits
 			}
 
+			// Create the exit rectangle game object
 			const exitRect = this.add.rectangle(
 				exitX,
 				exitY,
 				exitWidth,
 				exitHeight,
 				0xff0000,
-				0.7
+				0.7 // Red color, semi-transparent
 			);
-			exitRect.setOrigin(0.5, 0.5);
-			exitRect.setInteractive();
-			exitRect.setName(exit.toRoom);
-			exitRect.setDepth(20);
+			exitRect.setOrigin(0.5, 0.5); // Set origin to center
+			exitRect.setInteractive(); // Make it clickable/hoverable
+			exitRect.setName(exit.toRoom); // Store target room name on the object
+			exitRect.setDepth(20); // Render above room graphics, below player
 
+			// Add hover effects for the exit rectangle
 			exitRect.on('pointerover', () => {
-				exitRect.setFillStyle(0x00ff00, 0.9);
-				this.game.canvas.style.cursor = 'pointer';
+				exitRect.setFillStyle(0x00ff00, 0.9); // Green on hover
+				this.game.canvas.style.cursor = 'pointer'; // Change cursor to pointer
 			});
 
 			exitRect.on('pointerout', () => {
-				exitRect.setFillStyle(0xff0000, 0.7);
-				this.game.canvas.style.cursor = 'default';
+				exitRect.setFillStyle(0xff0000, 0.7); // Revert to red on mouse out
+				this.game.canvas.style.cursor = 'default'; // Revert cursor
 			});
 
+			// Add click listener for room transitions
 			exitRect.on('pointerdown', () => {
 				console.log(`Clicked on exit to: ${exit.toRoom}`);
 
-				const playerBounds = this.player.getBounds();
-				const exitBounds = exitRect.getBounds();
+				const playerBounds = this.player.getBounds(); // Get player's bounding box
+				const exitBounds = exitRect.getBounds(); // Get exit's bounding box
 
-				// Calculate distance between centers of player and exit
-				const distance = Phaser.Math.Distance.Between(
-					playerBounds.centerX,
-					playerBounds.centerY,
-					exitBounds.centerX,
-					exitBounds.centerY
+				// Create an "expanded" exit bounds to check proximity for player activation
+				// This creates a slightly larger rectangle around the exit for the player to enter.
+				// We expand it by roughly 1 player's width/height on each side.
+				const proximityExitBounds = new Phaser.Geom.Rectangle(
+					exitBounds.x - playerBounds.width * 0.7, // Left: shift left by 70% of player width
+					exitBounds.y - playerBounds.height * 0.7, // Top: shift up by 70% of player height
+					exitBounds.width + playerBounds.width * 1.4, // Width: add 140% of player width (70% on each side)
+					exitBounds.height + playerBounds.height * 1.4 // Height: add 140% of player height
 				);
 
-				// Define activation distance: e.g., player must be within 3 times its own size from exit center
-				const activationDistance =
-					Math.max(playerBounds.width, playerBounds.height) * 3;
-
-				if (distance > activationDistance) {
+				// Check if the player's bounding box overlaps with the expanded exit bounds
+				if (
+					!Phaser.Geom.Intersects.RectangleToRectangle(
+						playerBounds,
+						proximityExitBounds
+					)
+				) {
 					console.log(
-						`Player not close enough to exit! Distance: ${distance.toFixed(
-							2
-						)}, Required: ${activationDistance.toFixed(2)}`
+						`Player not close enough to exit! Player bounds: ${JSON.stringify(
+							playerBounds
+						)}, Proximity Exit Bounds: ${JSON.stringify(
+							proximityExitBounds
+						)}`
 					);
+					// Notify React component that player is too far
 					this.gameEventCallback('gameFeedback', {
 						message: 'Player not close enough to the exit.',
 						type: 'error',
 					});
-					return;
+					return; // Prevent room transition
 				}
 
 				console.log(
-					`Player is close enough to exit. Distance: ${distance.toFixed(
-						2
-					)}`
+					`Player is close enough to exit (overlap detected).`
 				);
 
-				this.playerLocation = exitRect.name;
-				this.drawRoom();
+				// If close enough, perform room transition
+				this.playerLocation = exitRect.name; // Update current room
+				this.drawRoom(); // Redraw the new room
 				this.player.setPosition(
 					this.scale.width / 2,
 					this.scale.height / 2
-				);
+				); // Recenter player in new room
 				this.gameEventCallback('roomChanged', {
 					newLocation: this.playerLocation,
-				});
+				}); // Notify React component
 			});
 
-			this.exitRects.push(exitRect);
+			this.exitRects.push(exitRect); // Add to array for management
 		});
 
-		this.updateDecayOverlay();
+		this.updateDecayOverlay(); // Ensure decay overlay is redrawn with the room
 	}
 
+	/**
+	 * Draws the 'Starting Chamber' room layout.
+	 */
 	drawStartingChamber(width: number, height: number) {
 		const roomWidth = width * 0.7;
 		const roomHeight = height * 0.7;
 		const x = (width - roomWidth) / 2;
 		const y = (height - roomHeight) / 2;
 
+		// Outer green border
 		this.currentRoomGraphics.lineStyle(4, 0x00ff00, 1);
 		this.currentRoomGraphics.strokeRect(x, y, roomWidth, roomHeight);
 
+		// Inner darker green border
 		this.currentRoomGraphics.lineStyle(2, 0x00aa00, 0.8);
 		this.currentRoomGraphics.strokeRect(
 			x + 50,
@@ -349,11 +393,13 @@ class GameScene extends Phaser.Scene {
 			roomHeight - 100
 		);
 
+		// Destroy existing puzzle element if present (for redraws)
 		if (this.puzzleElement) {
 			this.puzzleElement.destroy();
 			this.puzzleElement = undefined;
 		}
 
+		// Create the puzzle element (magenta square)
 		const panelX = x + roomWidth * 0.7;
 		const panelY = y + roomHeight * 0.3;
 		const panelSize = 60;
@@ -364,22 +410,25 @@ class GameScene extends Phaser.Scene {
 			panelSize,
 			0xff00ff
 		);
-		this.puzzleElement.setInteractive();
-		this.puzzleElement.setName('starting_chamber_panel');
-		this.puzzleElement.setDepth(40);
+		this.puzzleElement.setInteractive(); // Make it interactive
+		this.puzzleElement.setName('starting_chamber_panel'); // Name for identification
+		this.puzzleElement.setDepth(40); // Render above player
 
+		// Puzzle element hover effects
 		this.puzzleElement.on('pointerover', () => {
-			this.puzzleElement?.setFillStyle(0xff00ff, 0.7);
-			this.game.canvas.style.cursor = 'pointer';
+			this.puzzleElement?.setFillStyle(0xff00ff, 0.7); // Semi-transparent magenta on hover
+			this.game.canvas.style.cursor = 'pointer'; // Change cursor
 		});
 
 		this.puzzleElement.on('pointerout', () => {
-			this.puzzleElement?.setFillStyle(0xff00ff, 1);
-			this.game.canvas.style.cursor = 'default';
+			this.puzzleElement?.setFillStyle(0xff00ff, 1); // Opaque magenta on mouse out
+			this.game.canvas.style.cursor = 'default'; // Revert cursor
 		});
 
+		// Puzzle element click listener
 		this.puzzleElement.on('pointerdown', () => {
 			console.log(`Puzzle element clicked: ${this.puzzleElement?.name}`);
+			// Trigger the puzzleSolved event, indicating the next room is 'corrupted_archive'
 			this.gameEventCallback('puzzleSolved', {
 				puzzleId: this.puzzleElement?.name,
 				newLocation: 'corrupted_archive',
@@ -387,8 +436,12 @@ class GameScene extends Phaser.Scene {
 		});
 	}
 
+	/**
+	 * Draws the 'Corrupted Archive' room layout.
+	 */
 	drawCorruptedArchive(width: number, height: number) {
-		this.currentRoomGraphics.lineStyle(2, 0x880088, 0.7);
+		// Draw random corrupted data blocks
+		this.currentRoomGraphics.lineStyle(2, 0x880088, 0.7); // Purple lines
 		for (let i = 0; i < 30; i++) {
 			this.currentRoomGraphics.strokeRect(
 				Phaser.Math.Between(0, width - 50),
@@ -397,7 +450,8 @@ class GameScene extends Phaser.Scene {
 				Phaser.Math.Between(20, 100)
 			);
 		}
-		this.currentRoomGraphics.lineStyle(1, 0x00ffff, 0.5);
+		// Draw glitched lines
+		this.currentRoomGraphics.lineStyle(1, 0x00ffff, 0.5); // Cyan lines
 		for (let i = 0; i < 7; i++) {
 			this.currentRoomGraphics.beginPath();
 			const startY = Phaser.Math.Between(0, height);
@@ -408,14 +462,19 @@ class GameScene extends Phaser.Scene {
 			);
 			this.currentRoomGraphics.stroke();
 		}
+		// Ensure puzzle element is not drawn in this room
 		if (this.puzzleElement) {
 			this.puzzleElement.destroy();
 			this.puzzleElement = undefined;
 		}
 	}
 
+	/**
+	 * Draws a generic 'Empty Room' layout.
+	 */
 	drawEmptyRoom(width: number, height: number) {
-		this.currentRoomGraphics.lineStyle(1, 0x555555, 0.1);
+		// Draw faint grid lines
+		this.currentRoomGraphics.lineStyle(1, 0x555555, 0.1); // Grey, very transparent lines
 		for (let i = 0; i < 100; i++) {
 			const x1 = Phaser.Math.Between(0, width);
 			const y1 = Phaser.Math.Between(0, height);
@@ -423,20 +482,25 @@ class GameScene extends Phaser.Scene {
 			const y2 = Phaser.Math.Between(0, height);
 			this.currentRoomGraphics.lineBetween(x1, y1, x2, y2);
 		}
+		// Ensure puzzle element is not drawn in this room
 		if (this.puzzleElement) {
 			this.puzzleElement.destroy();
 			this.puzzleElement = undefined;
 		}
 	}
 
+	/**
+	 * Updates the visual overlay representing Oracle decay.
+	 */
 	updateDecayOverlay() {
-		this.decayOverlay.clear();
+		this.decayOverlay.clear(); // Clear previous overlay
 
 		if (this.oracleDecayLevel > 0) {
 			const { width, height } = this.sys.game.canvas;
-			this.decayOverlay.setBlendMode(Phaser.BlendModes.SCREEN);
+			this.decayOverlay.setBlendMode(Phaser.BlendModes.SCREEN); // Lighten effect
 
-			this.decayOverlay.fillStyle(0xffffff, this.oracleDecayLevel * 0.05);
+			// Draw random white squares/particles (more with higher decay)
+			this.decayOverlay.fillStyle(0xffffff, this.oracleDecayLevel * 0.05); // White, transparency scales with decay
 			for (let i = 0; i < this.oracleDecayLevel * 100; i++) {
 				this.decayOverlay.fillRect(
 					Phaser.Math.Between(0, width),
@@ -446,16 +510,17 @@ class GameScene extends Phaser.Scene {
 				);
 			}
 
+			// Draw random static lines (more with higher decay)
 			this.decayOverlay.lineStyle(
 				1,
 				0xffffff,
 				this.oracleDecayLevel * 0.3
-			);
+			); // White, transparency scales with decay
 			for (let i = 0; i < this.oracleDecayLevel * 20; i++) {
 				const y = Phaser.Math.Between(0, height);
 				this.decayOverlay.beginPath();
 				this.decayOverlay.moveTo(0, y);
-				this.decayOverlay.lineTo(width, y + Phaser.Math.Between(-2, 2));
+				this.decayOverlay.lineTo(width, y + Phaser.Math.Between(-2, 2)); // Slightly offset line
 				this.decayOverlay.stroke();
 			}
 		}
