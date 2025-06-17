@@ -1,24 +1,41 @@
-// src/app/game/page.tsx (or src/app/page.tsx)
+// src/app/game/page.tsx
 
-'use client'; // This ensures the component runs on the client side
+'use client'; // This directive ensures the component runs on the client side
 
 import React, { useState, useEffect, useRef } from 'react';
-import Hud from '@/components/hud'; // Your UI overlay
-import PhaserGame from '@/components/phaser-game'; // The component that wraps Phaser
+import Hud from '@/components/hud'; // Ensure this path is correct based on your setup
+import dynamic from 'next/dynamic'; // Import dynamic for client-side loading
+
+// Dynamically import PhaserGame and set ssr to false
+// This is crucial to prevent "window is not defined" errors during server-side rendering
+const DynamicPhaserGame = dynamic(() => import('@/components/phaser-game'), {
+	ssr: false, // Prevents server-side rendering of this component
+	loading: () => (
+		<div
+			style={{
+				display: 'flex',
+				justifyContent: 'center',
+				alignItems: 'center',
+				height: '100vh',
+				backgroundColor: 'black',
+				color: 'white',
+			}}
+		>
+			Loading Elysium...
+		</div>
+	), // Optional loading message
+});
 
 export default function GamePage() {
 	const [playerLocation, setPlayerLocation] = useState('starting_chamber');
 	const [oracleWhisper, setOracleWhisper] = useState('...');
-	const [puzzleState, setPuzzleState] = useState({});
-	const [oracleDecayLevel, setOracleDecayLevel] = useState(0.5); // Example decay
+	const [puzzleState, setPuzzleState] = useState({}); // For future puzzle state management
+	const [oracleDecayLevel, setOracleDecayLevel] = useState(0.0); // Starts at 0, will decay
 
-	// Ref to hold the Phaser game instance or communicate with it if needed
-	const phaserGameRef = useRef<Phaser.Game | null>(null);
-
-	// Function to request lore from API
+	// Function to fetch lore from the Next.js API route
 	const fetchOracleWhisper = async () => {
 		try {
-			setOracleWhisper('Oracle is contemplating...'); // Loading state
+			setOracleWhisper('Oracle is contemplating...'); // Set a loading state for the whisper
 			const response = await fetch('/api/gemini-lore', {
 				method: 'POST',
 				headers: {
@@ -28,7 +45,7 @@ export default function GamePage() {
 					context: {
 						playerLocation,
 						oracleDecayLevel,
-						playerProgress: ['activated_intro_panel'], // Example progress
+						playerProgress: ['activated_intro_panel'], // Example: Pass actual player progress
 					},
 				}),
 			});
@@ -38,37 +55,51 @@ export default function GamePage() {
 			} else {
 				console.error('Failed to fetch lore:', data.error);
 				setOracleWhisper(
-					'A static message for when the Oracle is silent...'
+					'The Oracle remains silent, its connection severed.'
 				);
 			}
 		} catch (error) {
 			console.error('Network error fetching lore:', error);
-			setOracleWhisper('The connection to the Oracle flickers...');
+			setOracleWhisper(
+				'A deep static fills the air. No signal from the Oracle.'
+			);
 		}
 	};
 
+	// Effect for initial setup (first fetch and decay interval)
 	useEffect(() => {
-		// Initial fetch or trigger based on game events
+		// Fetch initial lore when the component mounts
 		fetchOracleWhisper();
 
-		// Example: update decay level over time or based on game events
-		const decayInterval = setInterval(() => {
-			setOracleDecayLevel((prev) => Math.min(1, prev + 0.01)); // Example: decay increases
-		}, 5000); // Every 5 seconds
+		// Set up a continuous interval for Oracle decay (this does NOT call Gemini API)
+		const decayIntervalId = setInterval(() => {
+			setOracleDecayLevel((prev) => Math.min(1.0, prev + 0.005)); // Increase decay from 0.0 to 1.0
+		}, 2000); // Update decay level every 2 seconds
 
-		return () => clearInterval(decayInterval);
-	}, []); // Run once on mount
+		// Cleanup function: Clear the interval when the component unmounts
+		return () => {
+			clearInterval(decayIntervalId);
+		};
+	}, []); // Empty dependency array means this effect runs once on mount and cleans up on unmount
 
-	// This function would be passed down to the Phaser game component
-	// to allow Phaser to notify React of game events.
+	// Effect to fetch new lore when playerLocation changes
+	useEffect(() => {
+		// Only fetch if playerLocation has genuinely changed from its initial state
+		// to avoid a duplicate fetch right after the initial one.
+		// Also, if oracleWhisper is still '...' from initial loading, allow re-fetch
+		if (playerLocation !== 'starting_chamber' || oracleWhisper === '...') {
+			fetchOracleWhisper();
+		}
+	}, [playerLocation]); // This effect re-runs when playerLocation state changes
+
+	// Callback function to handle events from the Phaser game
 	const handleGameEvent = (type: string, payload?: any) => {
 		if (type === 'puzzleSolved') {
 			console.log(`Puzzle ${payload.puzzleId} solved!`);
-			setPlayerLocation(payload.newLocation); // Trigger React state update for new scene
-			// Optionally fetch new lore after a puzzle is solved
-			fetchOracleWhisper();
+			// Update player location based on puzzle solved, which will trigger new lore
+			setPlayerLocation(payload.newLocation);
 		}
-		// Handle other events like 'playerMoved', 'itemCollected' etc.
+		// You can add more event types here (e.g., 'itemCollected', 'areaDiscovered')
 	};
 
 	return (
@@ -80,19 +111,18 @@ export default function GamePage() {
 				overflow: 'hidden',
 			}}
 		>
-			{/* Phaser Game Canvas */}
-			<PhaserGame
+			{/* The dynamically loaded Phaser game component */}
+			<DynamicPhaserGame
 				onGameEvent={handleGameEvent}
 				playerLocation={playerLocation}
 				oracleDecayLevel={oracleDecayLevel}
-				// Pass other game state from React to Phaser as props if needed
+				// You can pass more state from React to Phaser as props if needed
 			/>
 
-			{/* 2D HUD/UI Overlay */}
+			{/* The 2D HUD/UI overlay */}
 			<Hud
 				whisper={oracleWhisper}
-				onLoreRequest={fetchOracleWhisper}
-				// Pass any other state you want to display on the HUD
+				onLoreRequest={fetchOracleWhisper} // Allow user to manually request lore
 			/>
 		</main>
 	);
